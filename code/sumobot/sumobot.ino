@@ -12,18 +12,7 @@
 #include <Servo.h>
 // This line includes the code we need to use the ultrasonic range finder
 #include <NewPing.h>
-
-/*******************************************************
-* Define statements - Define constants we will use later
-*******************************************************/
-#define TRIGGER_PIN       A0    // Arduino pin tied to trigger pin on the ultrasonic sensor.
-#define ECHO_PIN          A1    // Arduino pin tied to echo pin on the ultrasonic sensor.
-#define LEFT_WHEEL_PIN    A2    // Arduino pin tied to the left servo wheel motor
-#define RIGHT_WHEEL_PIN   A3    // Arduino pin tied to the right servo wheel motor
-#define MAX_DISTANCE      200   // Maximum distance we want to ping for (in centimeters). Maximum sensor distance is rated at 400-500cm.
-#define FRONT_EDGE_SENSOR A4    // Pin connected to the front edge IR sensor
-#define REAR_EDGE_SENSOR  A5    // Pin connected to the rear edge IR sensor
-#define LIGHT_COLOR_VALUE 512   // This is a value returned from the edge sensors when they see a lighter color, may need tweaking
+#include "common.h"
 
 /********************************************************
 * Class object instances - These will help us control the
@@ -37,25 +26,122 @@ NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
 Servo rightWheel;
 Servo leftWheel;
 
+State state;
+
+void initGlobals() {
+  memset(&state, 0, sizeof(state));
+
+  // updateNextTime(&state.nextFasttime, 2);
+  updateNextTime(&state.next250time, 250);
+  updateNextTime(&state.next500time, 500);
+  updateNextTime(&state.next1000time, 1000);
+  updateNextTime(&state.next5000time, 5000);
+  updateNextTime(&state.next10000time, 10000);
+  // updateNextTime(&state.next25000time, 25000);
+  // updateNextTime(&state.next1mintime, 60000);
+  // updateNextTime(&state.next5mintime, (60000 * 5));
+  updateNextTime(&state.next10mintime, (60000 * 10));
+}
+
 /********************************************************
 * Setup code runs one time at the very beginning after we
 * power up (or reset)
 ********************************************************/
 void setup()
 {
-	// Open serial monitor so we can print out debug information
-	// When connected to a USB port
-	Serial.begin(9600);
+  initGlobals();
+
+  // Open serial monitor so we can print out debug information
+  // When connected to a USB port
+  Serial.begin(9600);
 	
-	// Tell the servo objects which pins the servos are connected to
-	leftWheel.attach(LEFT_WHEEL_PIN);
-	rightWheel.attach(RIGHT_WHEEL_PIN);
+  // Tell the servo objects which pins the servos are connected to
+  leftWheel.attach(LEFT_WHEEL_PIN);
+  rightWheel.attach(RIGHT_WHEEL_PIN);
+  leftWheel.write(LEFT_WHEEL_STOP_VALUE);
+  rightWheel.write(RIGHT_WHEEL_STOP_VALUE);
 }
 
 /********************************************************
 * Loop code runs over and over, forever while powered on
 ********************************************************/
 void loop()
+{
+  const unsigned long now = millis();
+
+  while (true) {
+    if (state.nextFasttime <= now) {
+
+      updateNextTime(&state.nextFasttime, 2); continue;
+    } else if (state.next250time <= now) {
+
+      updateNextTime(&state.next250time, 250); continue;
+    } else if (state.next500time <= now) {
+      changeMoveState();
+
+      updateNextTime(&state.next500time, 500); continue;
+    } else if (state.next1000time <= now) {   // 1 sec
+
+      updateNextTime(&state.next1000time, 1000); continue;
+    } else if (state.next5000time <= now) {   // 5 secs
+
+      updateNextTime(&state.next5000time, 5000); continue;
+    } else if (state.next10000time <= now) {  // 10 secs
+
+      updateNextTime(&state.next10000time, 10000); continue;
+    } else if (state.next25000time <= now) {  // 25 seconds
+
+      updateNextTime(&state.next25000time, 25000); continue;
+    } else if (state.next1mintime <= now) {  // 1 min
+
+      updateNextTime(&state.next1mintime, 60000); continue;
+    } else if (state.next5mintime <= now) {  // 5 mins
+
+      updateNextTime(&state.next5mintime, (60000 * 5)); continue;
+    } else if (state.next10mintime <= now) {  // 10 mins
+
+      updateNextTime(&state.next10mintime, (60000 * 10)); continue;
+    }
+
+    break;
+  } // while
+}
+
+// -----
+
+void updateNextTime(unsigned long *nextTimePtr, unsigned long increment) {
+  *nextTimePtr = millis() + increment;
+}
+
+// ----
+
+void changeMoveState() {
+  static int lastValue = 0;
+
+  ++lastValue;
+  if (lastValue == 1) {
+    // go backwards
+    leftWheel.write(0);
+    rightWheel.write(180);
+  } else if (lastValue == 2) {
+    leftWheel.write(LEFT_WHEEL_STOP_VALUE);
+    rightWheel.write(RIGHT_WHEEL_STOP_VALUE);
+  } else if (lastValue == 4) {
+    // go forward
+    leftWheel.write(180);
+    rightWheel.write(0);
+  } else if (lastValue > 4) {
+    leftWheel.write(LEFT_WHEEL_STOP_VALUE);
+    rightWheel.write(RIGHT_WHEEL_STOP_VALUE);
+    lastValue = 0;
+  }
+
+}
+
+// =====
+
+#if 0
+void foo()
 {
 	// Variables we will need in the loop code
 	int distInCentimeters;  // We'll store the ultrasonic range distance here
@@ -132,3 +218,4 @@ void loop()
 	
 	delay(50);
 }
+#endif
