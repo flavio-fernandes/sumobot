@@ -18,12 +18,12 @@
 *******************************************************/
 #define TRIGGER_PIN       A0    // Arduino pin tied to trigger pin on the ultrasonic sensor.
 #define ECHO_PIN          A1    // Arduino pin tied to echo pin on the ultrasonic sensor.
-#define LEFT_WHEEL_PIN    A2    // Arduino pin tied to the left servo wheel motor
-#define RIGHT_WHEEL_PIN   A3    // Arduino pin tied to the right servo wheel motor
+#define LEFT_WHEEL_PIN    A3    // Arduino pin tied to the left servo wheel motor
+#define RIGHT_WHEEL_PIN   A2    // Arduino pin tied to the right servo wheel motor
 #define MAX_DISTANCE      200   // Maximum distance we want to ping for (in centimeters). Maximum sensor distance is rated at 400-500cm.
-#define FRONT_EDGE_SENSOR A4    // Pin connected to the front edge IR sensor
-#define REAR_EDGE_SENSOR  A5    // Pin connected to the rear edge IR sensor
-#define LIGHT_COLOR_VALUE 512   // This is a value returned from the edge sensors when they see a lighter color, may need tweaking
+#define FRONT_EDGE_SENSOR A5    // Pin connected to the front edge IR sensor
+#define REAR_EDGE_SENSOR  A4    // Pin connected to the rear edge IR sensor
+#define LIGHT_COLOR_VALUE 400   // This is a value returned from the edge sensors when they see a lighter color, may need tweaking 0 to 1023
 
 /********************************************************
 * Class object instances - These will help us control the
@@ -81,7 +81,7 @@ void loop()
 		Serial.println("Front edge detected, backing up!");
 		leftWheel.write(180);
 		rightWheel.write(0);
-		delay(1000);
+		delay(500); // milliseconds
 	}
 	// Now check the back edge
 	int backEdgeValue = analogRead(REAR_EDGE_SENSOR);
@@ -93,7 +93,7 @@ void loop()
 		Serial.println("Back edge detected, moving forward!");
 		leftWheel.write(0);
 		rightWheel.write(180);
-		delay(1000);
+		delay(500);
 	}
 
 	/*******************************
@@ -121,4 +121,5 @@ void loop()
 	}
 	
 	delay(50);
+  // delay(1000);
 }
