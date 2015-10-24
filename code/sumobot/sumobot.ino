@@ -31,15 +31,22 @@ State state;
 void initGlobals() {
   memset(&state, 0, sizeof(state));
 
-  // updateNextTime(&state.nextFasttime, 2);
+  state.now = millis();
+
+  state.frontRightSensorTriggerTs = state.now;
+  state.frontLeftSensorTriggerTs = state.now;
+  state.rearRightSensorTriggerTs = state.now;
+  state.rearLeftSensorTriggerTs = state.now;
+
+  updateNextTime(&state.nextFasttime, 2);
   updateNextTime(&state.next250time, 250);
   updateNextTime(&state.next500time, 500);
   updateNextTime(&state.next1000time, 1000);
   updateNextTime(&state.next5000time, 5000);
   updateNextTime(&state.next10000time, 10000);
-  // updateNextTime(&state.next25000time, 25000);
-  // updateNextTime(&state.next1mintime, 60000);
-  // updateNextTime(&state.next5mintime, (60000 * 5));
+  updateNextTime(&state.next25000time, 25000);
+  updateNextTime(&state.next1mintime, 60000);
+  updateNextTime(&state.next5mintime, (60000 * 5));
   updateNextTime(&state.next10mintime, (60000 * 10));
 }
 
@@ -65,6 +72,9 @@ void setup()
   rightWheel.attach(RIGHT_WHEEL_PIN);
   leftWheel.write(LEFT_WHEEL_STOP_VALUE);
   rightWheel.write(RIGHT_WHEEL_STOP_VALUE);
+
+  // start a delay
+  delay(5000);
 }
 
 /********************************************************
@@ -72,39 +82,41 @@ void setup()
 ********************************************************/
 void loop()
 {
-  const unsigned long now = millis();
+  state.now = millis();
 
   while (true) {
-    if (state.nextFasttime <= now) {
+    if (state.nextFasttime <= state.now) {
+      checkForEdges();
 
       updateNextTime(&state.nextFasttime, 2); continue;
-    } else if (state.next250time <= now) {
+    } else if (state.next250time <= state.now) {
+      reduceSpeed();
 
       updateNextTime(&state.next250time, 250); continue;
-    } else if (state.next500time <= now) {
-      changeMoveState();
+    } else if (state.next500time <= state.now) {
+      // changeMoveState();
 
       updateNextTime(&state.next500time, 500); continue;
-    } else if (state.next1000time <= now) {   // 1 sec
+    } else if (state.next1000time <= state.now) {   // 1 sec
       debugPrintSensors();
 
       updateNextTime(&state.next1000time, 1000); continue;
-    } else if (state.next5000time <= now) {   // 5 secs
+    } else if (state.next5000time <= state.now) {   // 5 secs
 
       updateNextTime(&state.next5000time, 5000); continue;
-    } else if (state.next10000time <= now) {  // 10 secs
+    } else if (state.next10000time <= state.now) {  // 10 secs
 
       updateNextTime(&state.next10000time, 10000); continue;
-    } else if (state.next25000time <= now) {  // 25 seconds
+    } else if (state.next25000time <= state.now) {  // 25 seconds
 
       updateNextTime(&state.next25000time, 25000); continue;
-    } else if (state.next1mintime <= now) {  // 1 min
+    } else if (state.next1mintime <= state.now) {  // 1 min
 
       updateNextTime(&state.next1mintime, 60000); continue;
-    } else if (state.next5mintime <= now) {  // 5 mins
+    } else if (state.next5mintime <= state.now) {  // 5 mins
 
       updateNextTime(&state.next5mintime, (60000 * 5)); continue;
-    } else if (state.next10mintime <= now) {  // 10 mins
+    } else if (state.next10mintime <= state.now) {  // 10 mins
 
       updateNextTime(&state.next10mintime, (60000 * 10)); continue;
     }
@@ -116,9 +128,8 @@ void loop()
 // -----
 
 void updateNextTime(unsigned long *nextTimePtr, unsigned long increment) {
-  const unsigned long now = millis();
-  *nextTimePtr = now + increment;
-  while (*nextTimePtr < now) {
+  *nextTimePtr = state.now + increment;
+  while (*nextTimePtr < state.now) {
     Serial.println("FIXME: updateNextTime cannot handle wraps");
     delay(1000);
   }
@@ -167,6 +178,130 @@ void debugPrintSensors() {
   tmpValue = analogRead(REAR_EDGE_RIGHT_SENSOR);
   Serial.print("Rear Edge Right: "); Serial.println(tmpValue);
 }
+
+// ----
+
+void checkForEdges()
+{
+  int tmpValue;
+  bool needToReactLeft = false;
+  bool needToReactRight = false;
+
+  // Less than LIGHT_COLOR_VALUE means we see a dark color
+  // This number can be tweaked if the IR sensor is closer to the ground
+  tmpValue = analogRead(FRONT_EDGE_LEFT_SENSOR);
+  if (tmpValue > LIGHT_COLOR_VALUE) {
+    state.leftWheelDirection = DIRECTION_BACK;
+    state.leftWheelSpeed = SPEED_MAX;
+    state.frontLeftSensorTriggerTs = state.now;
+    needToReactLeft = true;
+  } else {
+    tmpValue = analogRead(REAR_EDGE_LEFT_SENSOR);
+    if (tmpValue > LIGHT_COLOR_VALUE) {
+      state.leftWheelDirection = DIRECTION_FWD;
+      state.leftWheelSpeed = SPEED_MAX;
+      state.rearLeftSensorTriggerTs = state.now;
+      needToReactLeft = true;
+    }
+  }
+  if (needToReactLeft) {
+    setWheelSpeed(LEFT_WHEEL_PIN, state.leftWheelDirection, state.leftWheelSpeed);
+  }
+
+  tmpValue = analogRead(FRONT_EDGE_RIGHT_SENSOR);
+  if (tmpValue > LIGHT_COLOR_VALUE) {
+    state.rightWheelDirection = DIRECTION_BACK;
+    state.rightWheelSpeed = SPEED_MAX;
+    state.frontRightSensorTriggerTs = state.now;
+    needToReactRight = true;
+  } else {
+    tmpValue = analogRead(REAR_EDGE_RIGHT_SENSOR);
+    if (tmpValue > LIGHT_COLOR_VALUE) {
+      state.rightWheelDirection = DIRECTION_FWD;
+      state.rightWheelSpeed = SPEED_MAX;
+      state.rearRightSensorTriggerTs = state.now;
+      needToReactRight = true;
+    }
+  }
+  if (needToReactRight) {
+    setWheelSpeed(RIGHT_WHEEL_PIN, state.rightWheelDirection, state.rightWheelSpeed);
+
+    if (!needToReactLeft && state.leftWheelSpeed == 0) {
+      state.leftWheelSpeed = state.rightWheelSpeed / 2;
+      state.leftWheelDirection = opositeDirection(state.rightWheelDirection);
+      setWheelSpeed(LEFT_WHEEL_PIN, state.leftWheelDirection, state.leftWheelSpeed);
+    }
+  } else {
+    // left needed to react, and right did not. make right assist left
+    if (needToReactLeft && state.rightWheelSpeed == 0) {
+      state.rightWheelSpeed = state.leftWheelSpeed / 2;
+      state.rightWheelDirection = opositeDirection(state.leftWheelDirection);
+      setWheelSpeed(RIGHT_WHEEL_PIN, state.rightWheelDirection, state.rightWheelSpeed);
+    }
+  }
+}
+
+// ----
+
+int opositeDirection(int direction) {
+  return direction == DIRECTION_FWD ? DIRECTION_BACK : DIRECTION_FWD;
+}
+
+// ----
+
+void reduceSpeed()
+{
+  if (state.rightWheelSpeed > SPEED_MIN) {
+    if ((state.frontRightSensorTriggerTs + SENSOR_REACT_INTERVAL_MS) < state.now &&
+	(state.rearRightSensorTriggerTs  + SENSOR_REACT_INTERVAL_MS) < state.now) {
+	setWheelSpeed(RIGHT_WHEEL_PIN, state.rightWheelDirection, --state.rightWheelSpeed);
+      }
+  }
+  if (state.leftWheelSpeed > SPEED_MIN) {
+    if ((state.frontLeftSensorTriggerTs + SENSOR_REACT_INTERVAL_MS) < state.now &&
+	(state.rearLeftSensorTriggerTs + SENSOR_REACT_INTERVAL_MS) < state.now) {
+      setWheelSpeed(LEFT_WHEEL_PIN, state.leftWheelDirection, --state.leftWheelSpeed);
+    }
+  }
+}
+
+// ----
+
+void setWheelSpeed(int wheel, int direction, int speed)
+{
+  int servoValue;
+
+
+  if (wheel == LEFT_WHEEL_PIN) {
+    if (direction == DIRECTION_FWD) {
+      servoValue = map(speed, SPEED_MIN, SPEED_MAX, LEFT_WHEEL_STOP_VALUE, 180);
+    } else {
+      servoValue = map(speed, SPEED_MIN, SPEED_MAX, LEFT_WHEEL_STOP_VALUE, 0);
+    }
+
+    Serial.print("left wheel set to: "); Serial.print(servoValue);
+    Serial.print(" direction: "); Serial.print(direction);
+    Serial.print(" speed: "); Serial.print(speed);
+    Serial.println("");
+#ifndef DO_NOT_MOVE
+    leftWheel.write(servoValue);
+#endif // #ifndef DO_NOT_MOVE
+  } else {
+    if (direction == DIRECTION_FWD) {
+      servoValue = map(speed, SPEED_MIN, SPEED_MAX, RIGHT_WHEEL_STOP_VALUE, 0);
+    } else {
+      servoValue = map(speed, SPEED_MIN, SPEED_MAX, RIGHT_WHEEL_STOP_VALUE, 180);
+    }
+    Serial.print("right wheel set to: "); Serial.print(servoValue);
+    Serial.print(" direction: "); Serial.print(direction);
+    Serial.print(" speed: "); Serial.print(speed);
+    Serial.println("");
+#ifndef DO_NOT_MOVE
+    rightWheel.write(servoValue);
+#endif // #ifndef DO_NOT_MOVE
+  }
+}
+
 
 // ----
 

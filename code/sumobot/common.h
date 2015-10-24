@@ -1,14 +1,15 @@
 #ifndef _COMMON_H
 #define _COMMON_H
 
-// #define DEBUG 1
+// #define DO_NOT_MOVE 1
+
 
 /*******************************************************
 * Define statements - Define constants we will use later
 *******************************************************/
 #define TRIGGER_PIN       A0    // Arduino pin tied to trigger pin on the ultrasonic sensor.
 #define ECHO_PIN          A1    // Arduino pin tied to echo pin on the ultrasonic sensor.
-#if 0
+#ifndef DO_NOT_MOVE
 #define LEFT_WHEEL_PIN     9    // Arduino pin tied to the left servo wheel motor
 #define RIGHT_WHEEL_PIN   10    // Arduino pin tied to the right servo wheel motor
 #else
@@ -20,13 +21,33 @@
 #define FRONT_EDGE_RIGHT_SENSOR A3    // Pin connected to the front edge IR sensor
 #define REAR_EDGE_LEFT_SENSOR   A4    // Pin connected to the rear edge IR sensor
 #define REAR_EDGE_RIGHT_SENSOR  A5    // Pin connected to the rear edge IR sensor
-#define LIGHT_COLOR_VALUE      512   // This is a value returned from the edge sensors when they see a lighter color, may need tweaking
+#define LIGHT_COLOR_VALUE      810   // This is a value returned from the edge sensors when they see a lighter color, may need tweaking
 
-#define LEFT_WHEEL_STOP_VALUE   86    // 0 back;   86 stop;    180 fwd
+#define LEFT_WHEEL_STOP_VALUE   87    // 0 back;   87 stop;    180 fwd
 #define RIGHT_WHEEL_STOP_VALUE  88    // 0 fwd;    88 stop;    180 back
 
+#define DIRECTION_FWD  0
+#define DIRECTION_BACK 1
+
+#define SPEED_MIN 0
+#define SPEED_MAX 10
+
+#define SENSOR_REACT_INTERVAL_MS 250
 
 typedef struct {
+  unsigned long now; // aka  millis();
+
+  int leftWheelDirection;
+  int leftWheelSpeed;
+
+  int rightWheelDirection;
+  int rightWheelSpeed;
+
+  unsigned long frontRightSensorTriggerTs;
+  unsigned long frontLeftSensorTriggerTs;
+  unsigned long rearRightSensorTriggerTs;
+  unsigned long rearLeftSensorTriggerTs;
+
   
   unsigned long nextFasttime;   // few milliseconds timer
   unsigned long next250time;    // 250 milliseconds timer
