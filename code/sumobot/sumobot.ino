@@ -54,6 +54,11 @@ void setup()
   // Open serial monitor so we can print out debug information
   // When connected to a USB port
   Serial.begin(9600);
+
+  pinMode(FRONT_EDGE_LEFT_SENSOR, INPUT);
+  pinMode(FRONT_EDGE_RIGHT_SENSOR, INPUT);
+  pinMode(REAR_EDGE_LEFT_SENSOR, INPUT);
+  pinMode(REAR_EDGE_RIGHT_SENSOR, INPUT);
 	
   // Tell the servo objects which pins the servos are connected to
   leftWheel.attach(LEFT_WHEEL_PIN);
@@ -81,6 +86,7 @@ void loop()
 
       updateNextTime(&state.next500time, 500); continue;
     } else if (state.next1000time <= now) {   // 1 sec
+      debugPrintSensors();
 
       updateNextTime(&state.next1000time, 1000); continue;
     } else if (state.next5000time <= now) {   // 5 secs
@@ -110,7 +116,12 @@ void loop()
 // -----
 
 void updateNextTime(unsigned long *nextTimePtr, unsigned long increment) {
-  *nextTimePtr = millis() + increment;
+  const unsigned long now = millis();
+  *nextTimePtr = now + increment;
+  while (*nextTimePtr < now) {
+    Serial.println("FIXME: updateNextTime cannot handle wraps");
+    delay(1000);
+  }
 }
 
 // ----
@@ -138,9 +149,50 @@ void changeMoveState() {
 
 }
 
+// ----
+
+void debugPrintSensors() {
+  int tmpValue;
+
+  tmpValue = ping_cm_BugFix();
+  Serial.print("Distance (cm): "); Serial.println(tmpValue);
+
+  tmpValue = analogRead(FRONT_EDGE_LEFT_SENSOR);
+  Serial.print("Front Edge Left: "); Serial.println(tmpValue);
+  tmpValue = analogRead(FRONT_EDGE_RIGHT_SENSOR);
+  Serial.print("Front Edge Right: "); Serial.println(tmpValue);
+
+  tmpValue = analogRead(REAR_EDGE_LEFT_SENSOR);
+  Serial.print("Rear Edge Left: "); Serial.println(tmpValue);
+  tmpValue = analogRead(REAR_EDGE_RIGHT_SENSOR);
+  Serial.print("Rear Edge Right: "); Serial.println(tmpValue);
+}
+
+// ----
+
+// This is a wrapper function that tries to avoid a bug with the
+// HC-SR04 modules where they can get stuck return zero forever
+int ping_cm_BugFix() {
+  const int distCm = sonar.ping_cm();
+
+  if (distCm == 0) {
+    delay(100);
+    pinMode(ECHO_PIN, OUTPUT);
+    digitalWrite(ECHO_PIN, LOW);
+    delay(100);
+    pinMode(ECHO_PIN, INPUT);
+  }
+
+  return distCm;
+}
+
+// ----
+// ----
+
 // =====
 
 #if 0
+// junk zone // blabla
 void foo()
 {
 	// Variables we will need in the loop code

@@ -8,8 +8,13 @@
 *******************************************************/
 #define TRIGGER_PIN       A0    // Arduino pin tied to trigger pin on the ultrasonic sensor.
 #define ECHO_PIN          A1    // Arduino pin tied to echo pin on the ultrasonic sensor.
+#if 0
 #define LEFT_WHEEL_PIN     9    // Arduino pin tied to the left servo wheel motor
 #define RIGHT_WHEEL_PIN   10    // Arduino pin tied to the right servo wheel motor
+#else
+#define LEFT_WHEEL_PIN     4    // Arduino pin tied to the left servo wheel motor
+#define RIGHT_WHEEL_PIN    5    // Arduino pin tied to the right servo wheel motor
+#endif // #if 0
 #define MAX_DISTANCE      200   // Maximum distance we want to ping for (in centimeters). Maximum sensor distance is rated at 400-500cm.
 #define FRONT_EDGE_LEFT_SENSOR  A2    // Pin connected to the front edge IR sensor
 #define FRONT_EDGE_RIGHT_SENSOR A3    // Pin connected to the front edge IR sensor
