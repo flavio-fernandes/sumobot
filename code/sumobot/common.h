@@ -1,7 +1,7 @@
 #ifndef _COMMON_H
 #define _COMMON_H
 
-// #define DO_NOT_MOVE 1
+#define DO_NOT_MOVE 1
 
 
 /*******************************************************
@@ -9,14 +9,18 @@
 *******************************************************/
 #define TRIGGER_PIN       A0    // Arduino pin tied to trigger pin on the ultrasonic sensor.
 #define ECHO_PIN          A1    // Arduino pin tied to echo pin on the ultrasonic sensor.
-#ifndef DO_NOT_MOVE
+
+#ifdef DO_NOT_MOVE
+#define LEFT_WHEEL_PIN     2
+#define RIGHT_WHEEL_PIN    3
+#else
 #define LEFT_WHEEL_PIN     9    // Arduino pin tied to the left servo wheel motor
 #define RIGHT_WHEEL_PIN   10    // Arduino pin tied to the right servo wheel motor
-#else
-#define LEFT_WHEEL_PIN     4    // Arduino pin tied to the left servo wheel motor
-#define RIGHT_WHEEL_PIN    5    // Arduino pin tied to the right servo wheel motor
-#endif // #if 0
+#endif // #ifdef DO_NOT_MOVE
+
 #define MAX_DISTANCE      200   // Maximum distance we want to ping for (in centimeters). Maximum sensor distance is rated at 400-500cm.
+#define MAX_TARGET_DISTANCE 40  // Anything beyond this target distance is to be ignored
+
 #define FRONT_EDGE_LEFT_SENSOR  A2    // Pin connected to the front edge IR sensor
 #define FRONT_EDGE_RIGHT_SENSOR A3    // Pin connected to the front edge IR sensor
 #define REAR_EDGE_LEFT_SENSOR   A4    // Pin connected to the rear edge IR sensor
@@ -26,8 +30,26 @@
 #define LEFT_WHEEL_STOP_VALUE   87    // 0 back;   87 stop;    180 fwd
 #define RIGHT_WHEEL_STOP_VALUE  88    // 0 fwd;    88 stop;    180 back
 
-#define DIRECTION_FWD  0
-#define DIRECTION_BACK 1
+#define RING_SCAN_TIME        3500    // milliseconds it takes for scanning for obstacles
+
+typedef enum {
+  wheelRight,
+  wheelLeft,
+} Wheel;
+
+typedef enum {
+  directionForward,
+  directionBackward
+} Direction;
+
+typedef enum {
+  robotModeNoop = 0,
+  robotModeAvoidEdge,
+  robotModeRingScan,
+  robotModeFaceObstacle,
+  robotModeAttacking,
+  robotModeCount
+} RobotMode;
 
 #define SPEED_MIN 0
 #define SPEED_MAX 10
@@ -37,10 +59,10 @@
 typedef struct {
   unsigned long now; // aka  millis();
 
-  int leftWheelDirection;
+  Direction leftWheelDirection;
   int leftWheelSpeed;
 
-  int rightWheelDirection;
+  Direction rightWheelDirection;
   int rightWheelSpeed;
 
   unsigned long frontRightSensorTriggerTs;
@@ -48,6 +70,13 @@ typedef struct {
   unsigned long rearRightSensorTriggerTs;
   unsigned long rearLeftSensorTriggerTs;
 
+  Direction ringScanLeftDirection;          // spin direction used for enemy scan
+  unsigned long ringScanClosestDistanceTs;  // ts when 'best' enemy was located
+  int ringScanClosestDistance;         // distance to enemy, updated when scanning and when attacking
+  unsigned long ringScanObstacleTime;  // timestamp till spin will get to enemy; or timestamp
+                                       // scan for enemies is completed
+
+  RobotMode robotMode;
   
   unsigned long nextFasttime;   // few milliseconds timer
   unsigned long next250time;    // 250 milliseconds timer
