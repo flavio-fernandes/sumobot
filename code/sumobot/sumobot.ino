@@ -127,7 +127,8 @@ void loop()
 
       updateNextTime(&state.next1000time, 1000); continue;
     } else if (state.next5000time <= state.now) {   // 5 secs
-      checkStartRingScan();
+      debugGoStraight();
+      // checkStartRingScan();
 
       updateNextTime(&state.next5000time, 5000); continue;
     } else if (state.next10000time <= state.now) {  // 10 secs
@@ -366,6 +367,19 @@ void checkStopRingScan() {
   setWheelSpeed(wheelRight, state.rightWheelDirection, state.rightWheelSpeed);
   
   state.robotMode = robotModeFaceObstacle;
+}
+
+// ----
+
+void debugGoStraight() {
+  if (state.robotMode == robotModeAvoidEdge) return;
+
+  state.leftWheelDirection = 
+    state.rightWheelDirection = directionForward;
+  state.leftWheelSpeed = 
+    state.rightWheelSpeed = SPEED_MAX / 3;
+  setWheelSpeed(wheelLeft, state.leftWheelDirection, state.leftWheelSpeed);
+  setWheelSpeed(wheelRight, state.rightWheelDirection, state.rightWheelSpeed);
 }
 
 // ----
