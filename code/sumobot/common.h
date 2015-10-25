@@ -1,7 +1,7 @@
 #ifndef _COMMON_H
 #define _COMMON_H
 
-#define DO_NOT_MOVE 1
+// #define DO_NOT_MOVE 1
 
 
 /*******************************************************
@@ -77,8 +77,10 @@ typedef struct {
                                        // scan for enemies is completed
 
   RobotMode robotMode;
+  int sonarDistanceCm;
   
   unsigned long nextFasttime;   // few milliseconds timer
+  unsigned long next50time;     //  50 milliseconds timer
   unsigned long next250time;    // 250 milliseconds timer
   unsigned long next500time;    // 500 milliseconds timer
   unsigned long next1000time;   // 1 second timer

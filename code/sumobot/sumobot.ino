@@ -41,6 +41,7 @@ void initGlobals() {
   state.rearLeftSensorTriggerTs = state.now;
 
   updateNextTime(&state.nextFasttime, 2);
+  updateNextTime(&state.next50time, 50);
   updateNextTime(&state.next250time, 250);
   updateNextTime(&state.next500time, 500);
   updateNextTime(&state.next1000time, 1000);
@@ -58,6 +59,9 @@ void initGlobals() {
 ********************************************************/
 void setup()
 {
+  pinMode(13, OUTPUT);
+  digitalWrite(13, HIGH); 
+
   initGlobals();
 
   // Open serial monitor so we can print out debug information
@@ -79,6 +83,8 @@ void setup()
   // start a delay
   delay(5000);
   Serial.println("sumo fighter unleashed!");
+
+  digitalWrite(13, LOW); 
 }
 
 /********************************************************
@@ -104,12 +110,16 @@ void loop()
       checkFaceObstacle();
 
       updateNextTime(&state.nextFasttime, 2); continue;
+    } else if (state.next50time <= state.now) {
+      sonar.ping_timer(echoCheck); // Send out the ping, calls "echoCheck" function every 24uS where you can check the ping status.
+
+      updateNextTime(&state.next50time, 50); continue;
     } else if (state.next250time <= state.now) {
       reduceEdgeAvoidSpeed();
+      ringScanPing();
 
       updateNextTime(&state.next250time, 250); continue;
     } else if (state.next500time <= state.now) {
-      // ringScanPing();
 
       updateNextTime(&state.next500time, 500); continue;
     } else if (state.next1000time <= state.now) {   // 1 sec
@@ -285,10 +295,13 @@ void reduceEdgeAvoidSpeed()
 
 void checkStartRingScan() {
   if (state.robotMode != robotModeNoop) return;
-  if ((state.ringScanClosestDistanceTs + RING_SCAN_TIME) >= state.now) return;  // scan/attacked happened recently
+  // if ((state.ringScanClosestDistanceTs + RING_SCAN_TIME) >= state.now) return;  // scan/attacked happened recently
   
   state.ringScanClosestDistanceTs = state.now;
   state.ringScanClosestDistance = ping_cm_BugFix();
+
+  // ignore 0cm
+  if (state.ringScanClosestDistance == 0) return;
 
   state.leftWheelDirection = state.ringScanLeftDirection;
   state.rightWheelDirection = opositeDirection(state.leftWheelDirection);
@@ -297,7 +310,7 @@ void checkStartRingScan() {
   setWheelSpeed(wheelLeft, state.leftWheelDirection, state.leftWheelSpeed);
   setWheelSpeed(wheelRight, state.rightWheelDirection, state.rightWheelSpeed);
   
-  // calculate how long to spin back till obstacle in in front of robot
+  // calculate how long to spin
   updateNextTime(&state.ringScanObstacleTime, RING_SCAN_TIME);
 
   state.robotMode = robotModeRingScan;
@@ -310,6 +323,9 @@ void ringScanPing() {
   if (state.robotMode != robotModeRingScan) return;
 
   const int pingSnapshot = ping_cm_BugFix();
+
+  // ignore 0cm
+  if (pingSnapshot == 0) return;
 
   if (pingSnapshot <= state.ringScanClosestDistance) {
     state.ringScanClosestDistanceTs = state.now;
@@ -340,7 +356,7 @@ void checkStopRingScan() {
   const unsigned long deltaTimeToObstacle = state.now - state.ringScanClosestDistanceTs;
   updateNextTime(&state.ringScanObstacleTime, deltaTimeToObstacle);
 
-  Serial.print(" spinning back for (ms): "); Serial.print(deltaTimeToObstacle);
+  Serial.print("Starting attack. Spinning back for (ms): "); Serial.print(deltaTimeToObstacle);
   Serial.println("");
 
   // invert spin from direction used by scan, so we can go back to where enemy is
@@ -366,7 +382,7 @@ void checkFaceObstacle() {
   setWheelSpeed(wheelRight, state.rightWheelDirection, state.rightWheelSpeed);
 
   state.ringScanClosestDistance = ping_cm_BugFix();
-  Serial.print("Facing obstacle at (cm): "); Serial.print(state.ringScanClosestDistance);
+  Serial.print("Charging. Facing obstacle at (cm): "); Serial.print(state.ringScanClosestDistance);
   Serial.println("");
 
   state.robotMode = robotModeAttacking;
@@ -442,16 +458,26 @@ void setWheelSpeed(Wheel wheel, Direction direction, int speed)
 
 // ----
 
+void echoCheck() { // Timer2 interrupt calls this function every 24uS where you can check the ping status.
+  if (!sonar.check_timer()) return;
+
+  state.sonarDistanceCm = sonar.convert_cm(sonar.ping_result);
+#if 0
+  // Here's where you can add code.
+  Serial.print("Ping distance is: ");
+  Serial.print(state.sonarDistanceCm);
+  Serial.println(" cm");
+#endif
+}
+
+// --
+
 // This is a wrapper function that tries to avoid a bug with the
 // HC-SR04 modules where they can get stuck return zero forever
 int ping_cm_BugFix() {
-  // static unsigned long lastPingTs = state.now;
-  // static int lastDistCm = 200;
+  return state.sonarDistanceCm;
 
-  // if (state.now < (lastPingTs + 500)) {
-  //   return lastDistCm;
-  // }
-
+#if 0
   int distCm = sonar.ping_cm();
   if (distCm == 0) {
     delay(100);
@@ -461,10 +487,8 @@ int ping_cm_BugFix() {
     pinMode(ECHO_PIN, INPUT);
   }
 
-  // lastPingTs = state.now;
-  // lastDistCm = distCm;
-
   return distCm;
+#endif
 }
 
 // ----
