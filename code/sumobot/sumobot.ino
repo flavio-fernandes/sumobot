@@ -12,18 +12,7 @@
 #include <Servo.h>
 // This line includes the code we need to use the ultrasonic range finder
 #include <NewPing.h>
-
-/*******************************************************
-* Define statements - Define constants we will use later
-*******************************************************/
-#define TRIGGER_PIN       A0    // Arduino pin tied to trigger pin on the ultrasonic sensor.
-#define ECHO_PIN          A1    // Arduino pin tied to echo pin on the ultrasonic sensor.
-#define LEFT_WHEEL_PIN    A2    // Arduino pin tied to the left servo wheel motor
-#define RIGHT_WHEEL_PIN   A3    // Arduino pin tied to the right servo wheel motor
-#define MAX_DISTANCE      200   // Maximum distance we want to ping for (in centimeters). Maximum sensor distance is rated at 400-500cm.
-#define FRONT_EDGE_SENSOR A4    // Pin connected to the front edge IR sensor
-#define REAR_EDGE_SENSOR  A5    // Pin connected to the rear edge IR sensor
-#define LIGHT_COLOR_VALUE 512   // This is a value returned from the edge sensors when they see a lighter color, may need tweaking
+#include "common.h"
 
 /********************************************************
 * Class object instances - These will help us control the
@@ -37,25 +26,479 @@ NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
 Servo rightWheel;
 Servo leftWheel;
 
+State state;
+
+void initGlobals() {
+  memset(&state, 0, sizeof(state));
+
+  state.now = millis();
+
+  state.ringScanClosestDistanceTs = state.now;
+
+  state.frontRightSensorTriggerTs = state.now;
+  state.frontLeftSensorTriggerTs = state.now;
+  state.rearRightSensorTriggerTs = state.now;
+  state.rearLeftSensorTriggerTs = state.now;
+
+  updateNextTime(&state.nextFasttime, 2);
+  updateNextTime(&state.next50time, 50);
+  updateNextTime(&state.next250time, 250);
+  updateNextTime(&state.next500time, 500);
+  updateNextTime(&state.next1000time, 1000);
+  updateNextTime(&state.next5000time, 5000);
+  updateNextTime(&state.next10000time, 10000);
+  updateNextTime(&state.next25000time, 25000);
+  updateNextTime(&state.next1mintime, 60000);
+  updateNextTime(&state.next5mintime, (60000 * 5));
+  updateNextTime(&state.next10mintime, (60000 * 10));
+}
+
 /********************************************************
 * Setup code runs one time at the very beginning after we
 * power up (or reset)
 ********************************************************/
 void setup()
 {
-	// Open serial monitor so we can print out debug information
-	// When connected to a USB port
-	Serial.begin(9600);
+  pinMode(13, OUTPUT);
+  digitalWrite(13, HIGH); 
+
+  initGlobals();
+
+  // Open serial monitor so we can print out debug information
+  // When connected to a USB port
+  Serial.begin(115200);
+
+  pinMode(FRONT_EDGE_LEFT_SENSOR, INPUT);
+  pinMode(FRONT_EDGE_RIGHT_SENSOR, INPUT);
+  pinMode(REAR_EDGE_LEFT_SENSOR, INPUT);
+  pinMode(REAR_EDGE_RIGHT_SENSOR, INPUT);
 	
-	// Tell the servo objects which pins the servos are connected to
-	leftWheel.attach(LEFT_WHEEL_PIN);
-	rightWheel.attach(RIGHT_WHEEL_PIN);
+  // Tell the servo objects which pins the servos are connected to
+  leftWheel.attach(LEFT_WHEEL_PIN);
+  rightWheel.attach(RIGHT_WHEEL_PIN);
+  leftWheel.write(LEFT_WHEEL_STOP_VALUE);
+  rightWheel.write(RIGHT_WHEEL_STOP_VALUE);
+
+  Serial.println("init done");
+  // start a delay
+  delay(5000);
+  Serial.println("sumo fighter unleashed!");
+
+  digitalWrite(13, LOW); 
 }
 
 /********************************************************
 * Loop code runs over and over, forever while powered on
 ********************************************************/
 void loop()
+{
+  static RobotMode lastRobotMode = robotModeCount;
+
+  state.now = millis();
+
+  while (true) {
+    if (lastRobotMode != state.robotMode) {
+      Serial.print("Robot mode changing from "); Serial.print(lastRobotMode); Serial.print(" to ");
+      Serial.print(state.robotMode); Serial.println("");
+      lastRobotMode = state.robotMode;
+    }
+
+    checkForEdges();
+
+    if (state.nextFasttime <= state.now) {
+      checkStopRingScan();
+      checkFaceObstacle();
+
+      updateNextTime(&state.nextFasttime, 2); continue;
+    } else if (state.next50time <= state.now) {
+      sonar.ping_timer(echoCheck); // Send out the ping, calls "echoCheck" function every 24uS where you can check the ping status.
+
+      updateNextTime(&state.next50time, 50); continue;
+    } else if (state.next250time <= state.now) {
+      reduceEdgeAvoidSpeed();
+      ringScanPing();
+
+      updateNextTime(&state.next250time, 250); continue;
+    } else if (state.next500time <= state.now) {
+
+      updateNextTime(&state.next500time, 500); continue;
+    } else if (state.next1000time <= state.now) {   // 1 sec
+      checkAttackProgress();
+
+      updateNextTime(&state.next1000time, 1000); continue;
+    } else if (state.next5000time <= state.now) {   // 5 secs
+      checkStartRingScan();
+
+      updateNextTime(&state.next5000time, 5000); continue;
+    } else if (state.next10000time <= state.now) {  // 10 secs
+      debugPrintSensors();
+
+      updateNextTime(&state.next10000time, 10000); continue;
+    } else if (state.next25000time <= state.now) {  // 25 seconds
+
+      updateNextTime(&state.next25000time, 25000); continue;
+    } else if (state.next1mintime <= state.now) {  // 1 min
+
+      updateNextTime(&state.next1mintime, 60000); continue;
+    } else if (state.next5mintime <= state.now) {  // 5 mins
+
+      updateNextTime(&state.next5mintime, (60000 * 5)); continue;
+    } else if (state.next10mintime <= state.now) {  // 10 mins
+
+      updateNextTime(&state.next10mintime, (60000 * 10)); continue;
+    }
+
+    break;
+  } // while
+}
+
+// -----
+
+void updateNextTime(unsigned long *nextTimePtr, unsigned long increment) {
+  *nextTimePtr = state.now + increment;
+  while (*nextTimePtr < state.now) {
+    Serial.println("FIXME: updateNextTime cannot handle wraps");
+    delay(1000);
+  }
+}
+
+// ----
+
+
+void debugPrintSensors() {
+  int tmpValue;
+
+  tmpValue = ping_cm_BugFix();
+  Serial.print("Distance (cm): "); Serial.println(tmpValue);
+
+  tmpValue = analogRead(FRONT_EDGE_LEFT_SENSOR);
+  Serial.print("Front Edge Left: "); Serial.println(tmpValue);
+  tmpValue = analogRead(FRONT_EDGE_RIGHT_SENSOR);
+  Serial.print("Front Edge Right: "); Serial.println(tmpValue);
+
+  tmpValue = analogRead(REAR_EDGE_LEFT_SENSOR);
+  Serial.print("Rear Edge Left: "); Serial.println(tmpValue);
+  tmpValue = analogRead(REAR_EDGE_RIGHT_SENSOR);
+  Serial.print("Rear Edge Right: "); Serial.println(tmpValue);
+}
+
+// ----
+
+void checkForEdges()
+{
+  int tmpValue;
+  bool needToReactLeft = false;
+  bool needToReactRight = false;
+
+  // Less than LIGHT_COLOR_VALUE means we see a dark color
+  // This number can be tweaked if the IR sensor is closer to the ground
+
+  // LEFT SIDE (1 of 2)
+  tmpValue = analogRead(FRONT_EDGE_LEFT_SENSOR);
+  if (tmpValue > LIGHT_COLOR_VALUE) {
+    state.leftWheelDirection = directionBackward;
+    state.frontLeftSensorTriggerTs = state.now;
+    state.leftWheelSpeed = SPEED_MAX;
+    needToReactLeft = true;
+  } else {
+    tmpValue = analogRead(REAR_EDGE_LEFT_SENSOR);
+    if (tmpValue > LIGHT_COLOR_VALUE) {
+      state.leftWheelDirection = directionForward;
+      state.rearLeftSensorTriggerTs = state.now;
+      state.leftWheelSpeed = SPEED_MAX;
+      needToReactLeft = true;
+    }
+  }
+  if (needToReactLeft) {
+    setWheelSpeed(wheelLeft, state.leftWheelDirection, state.leftWheelSpeed);
+  }
+
+  // RIGHT SIDE
+  tmpValue = analogRead(FRONT_EDGE_RIGHT_SENSOR);
+  if (tmpValue > LIGHT_COLOR_VALUE) {
+    state.rightWheelDirection = directionBackward;
+    state.frontRightSensorTriggerTs = state.now;
+    state.rightWheelSpeed = SPEED_MAX;
+    needToReactRight = true;
+  } else {
+    tmpValue = analogRead(REAR_EDGE_RIGHT_SENSOR);
+    if (tmpValue > LIGHT_COLOR_VALUE) {
+      state.rightWheelDirection = directionForward;
+      state.rearRightSensorTriggerTs = state.now;
+      state.rightWheelSpeed = SPEED_MAX;
+      needToReactRight = true;
+    }
+  }
+  if (needToReactRight) {
+    setWheelSpeed(wheelRight, state.rightWheelDirection, state.rightWheelSpeed);
+
+    // if we made it here, we know that right wheel was engaged to deal with an
+    // edge situation. If the other wheel is currently not moving make it rotate
+    // the other way to enhance the reacting wheel.
+    if (state.leftWheelSpeed == 0) {
+      state.leftWheelSpeed = state.rightWheelSpeed / 2;
+      state.leftWheelDirection = opositeDirection(state.rightWheelDirection);
+      setWheelSpeed(wheelLeft, state.leftWheelDirection, state.leftWheelSpeed);
+    }
+  } else {
+
+    // LEFT SIDE (2 of 2)
+    if (needToReactLeft && state.rightWheelSpeed == 0) {
+      // if we made it here, we know that left wheel was engaged to deal with an
+      // edge situation. If the other wheel is currently not moving, make it rotate
+      // the other way to enhance the reacting wheel.
+      state.rightWheelSpeed = state.leftWheelSpeed / 2;
+      state.rightWheelDirection = opositeDirection(state.leftWheelDirection);
+      setWheelSpeed(wheelRight, state.rightWheelDirection, state.rightWheelSpeed);
+    }
+  }
+
+  if (needToReactLeft || needToReactRight) {
+    state.robotMode = robotModeAvoidEdge;
+  }
+}
+
+// ----
+
+Direction opositeDirection(Direction direction) {
+  return direction == directionForward ? directionBackward : directionForward;
+}
+
+// ----
+
+void reduceEdgeAvoidSpeed()
+{
+  if (state.robotMode != robotModeAvoidEdge) return;
+
+  // if wheel has non min speed, check if we are still within the minimum reaction
+  // interval since sensor triggered. If so, reduce speed by 1.
+
+  if (state.rightWheelSpeed > SPEED_MIN) {
+    if ((state.frontRightSensorTriggerTs + SENSOR_REACT_INTERVAL_MS) < state.now &&
+	(state.rearRightSensorTriggerTs  + SENSOR_REACT_INTERVAL_MS) < state.now) {
+	setWheelSpeed(wheelRight, state.rightWheelDirection, --state.rightWheelSpeed);
+      }
+  }
+  if (state.leftWheelSpeed > SPEED_MIN) {
+    if ((state.frontLeftSensorTriggerTs + SENSOR_REACT_INTERVAL_MS) < state.now &&
+	(state.rearLeftSensorTriggerTs + SENSOR_REACT_INTERVAL_MS) < state.now) {
+      setWheelSpeed(wheelLeft, state.leftWheelDirection, --state.leftWheelSpeed);
+    }
+  }
+
+  if (state.rightWheelSpeed == SPEED_MIN && state.leftWheelSpeed == SPEED_MIN) {
+    state.robotMode = robotModeNoop;
+  }
+}
+
+// ----
+
+void checkStartRingScan() {
+  if (state.robotMode != robotModeNoop) return;
+  // if ((state.ringScanClosestDistanceTs + RING_SCAN_TIME) >= state.now) return;  // scan/attacked happened recently
+  
+  state.ringScanClosestDistanceTs = state.now;
+  state.ringScanClosestDistance = ping_cm_BugFix();
+
+  // ignore 0cm
+  if (state.ringScanClosestDistance == 0) return;
+
+  state.leftWheelDirection = state.ringScanLeftDirection;
+  state.rightWheelDirection = opositeDirection(state.leftWheelDirection);
+  state.leftWheelSpeed = 
+    state.rightWheelSpeed = SPEED_MAX;
+  setWheelSpeed(wheelLeft, state.leftWheelDirection, state.leftWheelSpeed);
+  setWheelSpeed(wheelRight, state.rightWheelDirection, state.rightWheelSpeed);
+  
+  // calculate how long to spin
+  updateNextTime(&state.ringScanObstacleTime, RING_SCAN_TIME);
+
+  state.robotMode = robotModeRingScan;
+  state.ringScanLeftDirection = opositeDirection(state.ringScanLeftDirection);  // for next time
+}
+
+// ----
+
+void ringScanPing() {
+  if (state.robotMode != robotModeRingScan) return;
+
+  const int pingSnapshot = ping_cm_BugFix();
+
+  // ignore 0cm
+  if (pingSnapshot == 0) return;
+
+  if (pingSnapshot <= state.ringScanClosestDistance) {
+    state.ringScanClosestDistanceTs = state.now;
+    state.ringScanClosestDistance = pingSnapshot;
+
+    Serial.print("New best target distance (cm): "); Serial.print(state.ringScanClosestDistance);
+    Serial.println("");
+  }
+}
+
+// ----
+
+void checkStopRingScan() {
+  if (state.robotMode != robotModeRingScan) return;
+
+  if (state.ringScanObstacleTime > state.now) return;  // scan is not done
+
+  Serial.print("Best target distance (cm): "); Serial.print(state.ringScanClosestDistance);
+
+  // if obstacle is too far, then there are none... simply do nothing
+  if (state.ringScanClosestDistance >= MAX_TARGET_DISTANCE) {
+    Serial.println(" ... will not attack because that is too far");
+    setStateNoop();
+    return;
+  }
+
+  // calculate how long to spin back till obstacle in in front of robot
+  const unsigned long deltaTimeToObstacle = state.now - state.ringScanClosestDistanceTs;
+  updateNextTime(&state.ringScanObstacleTime, deltaTimeToObstacle);
+
+  Serial.print("Starting attack. Spinning back for (ms): "); Serial.print(deltaTimeToObstacle);
+  Serial.println("");
+
+  // invert spin from direction used by scan, so we can go back to where enemy is
+  state.leftWheelDirection = opositeDirection(state.leftWheelDirection);
+  state.rightWheelDirection = opositeDirection(state.leftWheelDirection);
+  setWheelSpeed(wheelLeft, state.leftWheelDirection, state.leftWheelSpeed);
+  setWheelSpeed(wheelRight, state.rightWheelDirection, state.rightWheelSpeed);
+  
+  state.robotMode = robotModeFaceObstacle;
+}
+
+// ----
+
+void checkFaceObstacle() {
+  if (state.robotMode != robotModeFaceObstacle) return;
+
+  if (state.ringScanObstacleTime > state.now) return;  // still spinning to face obstacle
+
+  // charge!
+  state.leftWheelDirection = 
+    state.rightWheelDirection = directionForward;
+  setWheelSpeed(wheelLeft, state.leftWheelDirection, state.leftWheelSpeed);
+  setWheelSpeed(wheelRight, state.rightWheelDirection, state.rightWheelSpeed);
+
+  state.ringScanClosestDistance = ping_cm_BugFix();
+  Serial.print("Charging. Facing obstacle at (cm): "); Serial.print(state.ringScanClosestDistance);
+  Serial.println("");
+
+  state.robotMode = robotModeAttacking;
+}
+
+// ----
+
+void checkAttackProgress() {
+  if (state.robotMode != robotModeAttacking) return;
+  static const int attackDistanceMaxDev = 20; // cm
+
+  const int pingSnapshot = ping_cm_BugFix();
+
+  if (pingSnapshot != 0 && pingSnapshot >= (state.ringScanClosestDistance + attackDistanceMaxDev)) {
+    Serial.print("Target distance increased to (cm): "); Serial.print(pingSnapshot);
+    Serial.println(" attack is stopping");
+    setStateNoop();
+    return;
+  }
+
+  state.ringScanClosestDistanceTs = state.now;
+  state.ringScanClosestDistance = pingSnapshot;
+
+  Serial.print("Target being attacked tracked at (cm): "); Serial.print(pingSnapshot);
+  Serial.println("");
+
+  // continue attacking!
+}
+
+// ----
+
+void setStateNoop() {
+  state.leftWheelSpeed = 
+    state.rightWheelSpeed = SPEED_MIN;
+  setWheelSpeed(wheelLeft, state.leftWheelDirection, state.leftWheelSpeed);
+  setWheelSpeed(wheelRight, state.rightWheelDirection, state.rightWheelSpeed);
+  state.robotMode = robotModeNoop;
+}
+
+// ----
+
+void setWheelSpeed(Wheel wheel, Direction direction, int speed)
+{
+  int servoValue;
+
+  if (wheel == wheelLeft) {
+    if (direction == directionForward) {
+      servoValue = map(speed, SPEED_MIN, SPEED_MAX, LEFT_WHEEL_STOP_VALUE, 180);
+    } else {
+      servoValue = map(speed, SPEED_MIN, SPEED_MAX, LEFT_WHEEL_STOP_VALUE, 0);
+    }
+
+    Serial.print("left wheel set to: "); Serial.print(servoValue);
+    Serial.print(" direction: "); Serial.print(direction == directionForward ? "fwd" : "back");
+    Serial.print(" speed: "); Serial.print(speed);
+    Serial.println("");
+    leftWheel.write(servoValue);
+  } else {
+    if (direction == directionForward) {
+      servoValue = map(speed, SPEED_MIN, SPEED_MAX, RIGHT_WHEEL_STOP_VALUE, 0);
+    } else {
+      servoValue = map(speed, SPEED_MIN, SPEED_MAX, RIGHT_WHEEL_STOP_VALUE, 180);
+    }
+    Serial.print("right wheel set to: "); Serial.print(servoValue);
+    Serial.print(" direction: "); Serial.print(direction == directionForward ? "fwd" : "back");
+    Serial.print(" speed: "); Serial.print(speed);
+    Serial.println("");
+    rightWheel.write(servoValue);
+  }
+
+}
+
+
+// ----
+
+void echoCheck() { // Timer2 interrupt calls this function every 24uS where you can check the ping status.
+  if (!sonar.check_timer()) return;
+
+  state.sonarDistanceCm = sonar.convert_cm(sonar.ping_result);
+#if 0
+  // Here's where you can add code.
+  Serial.print("Ping distance is: ");
+  Serial.print(state.sonarDistanceCm);
+  Serial.println(" cm");
+#endif
+}
+
+// --
+
+// This is a wrapper function that tries to avoid a bug with the
+// HC-SR04 modules where they can get stuck return zero forever
+int ping_cm_BugFix() {
+  return state.sonarDistanceCm;
+
+#if 0
+  int distCm = sonar.ping_cm();
+  if (distCm == 0) {
+    delay(100);
+    pinMode(ECHO_PIN, OUTPUT);
+    digitalWrite(ECHO_PIN, LOW);
+    delay(100);
+    pinMode(ECHO_PIN, INPUT);
+  }
+
+  return distCm;
+#endif
+}
+
+// ----
+// ----
+
+// =====
+
+#if 0
+// junk zone // blabla
+void foo()
 {
 	// Variables we will need in the loop code
 	int distInCentimeters;  // We'll store the ultrasonic range distance here
@@ -132,3 +575,27 @@ void loop()
 	
 	delay(50);
 }
+// ----
+void changeMoveState() {
+  static int lastValue = 0;
+
+  ++lastValue;
+  if (lastValue == 1) {
+    // go backwards
+    leftWheel.write(0);
+    rightWheel.write(180);
+  } else if (lastValue == 2) {
+    leftWheel.write(LEFT_WHEEL_STOP_VALUE);
+    rightWheel.write(RIGHT_WHEEL_STOP_VALUE);
+  } else if (lastValue == 4) {
+    // go forward
+    leftWheel.write(180);
+    rightWheel.write(0);
+  } else if (lastValue > 4) {
+    leftWheel.write(LEFT_WHEEL_STOP_VALUE);
+    rightWheel.write(RIGHT_WHEEL_STOP_VALUE);
+    lastValue = 0;
+  }
+
+}
+#endif
